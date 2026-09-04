@@ -1,0 +1,17 @@
+---
+name: Validate
+
+"on":
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  compose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Validate Compose
+        run: >-
+          docker compose -f stack/docker-compose.yml
+          --env-file stack/.env.sample config
