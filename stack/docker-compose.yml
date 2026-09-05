@@ -12,8 +12,9 @@ services:
     container_name: uptime-kuma
     environment:
       - TZ=${TZ:-Australia/Sydney}
-    ports:
-      - '127.0.0.1:3001:3001/tcp'
+    # Host networking lets Kuma monitor the NAS loopback-only service ports
+    # without hairpinning through Cloudflare and the Synology reverse proxy.
+    network_mode: host
     volumes:
       - '${UPTIME_KUMA_DATA_PATH:?Set UPTIME_KUMA_DATA_PATH in .env}:/app/data'
     restart: unless-stopped

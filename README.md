@@ -12,8 +12,10 @@ failure instead of failing with it.
 - Public URL: `https://uptime.ambitiouscake.com`
 
 Create the data directory, copy the values from `stack/.env.sample` into the
-Portainer stack environment, and deploy from this repository. The port is
-loopback-only; do not expose port 3001 at the router.
+Portainer stack environment, and deploy from this repository. Kuma uses host
+networking so it can monitor the DVR stack's loopback-only published ports
+directly. Uptime Kuma itself listens on port 3001; keep that port blocked at
+the router and expose it only through the Synology reverse proxy.
 
 ## Synology reverse proxy
 
