@@ -10,6 +10,11 @@ services:
   uptime-kuma:
     image: 'louislam/uptime-kuma:2'
     container_name: uptime-kuma
+    labels:
+      com.ambitiouscake.managed-by: "portainer-gitops"
+      com.ambitiouscake.environment: "production"
+      com.ambitiouscake.stack: "uptime-kuma"
+      com.centurylinklabs.watchtower.enable: "true"
     environment:
       - TZ=${TZ:-Australia/Sydney}
     # Host networking lets Kuma monitor the NAS loopback-only service ports
