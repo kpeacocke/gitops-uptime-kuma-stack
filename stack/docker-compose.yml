@@ -7,6 +7,35 @@ x-logging: &default-logging
     tag: "{{.Name}}"
 
 services:
+  mariadb:
+    image: 'mariadb:${MARIADB_VERSION:-11.8}'
+    container_name: uptime-kuma-mariadb
+    labels:
+      com.ambitiouscake.managed-by: "portainer-gitops"
+      com.ambitiouscake.environment: "production"
+      com.ambitiouscake.stack: "uptime-kuma"
+      com.centurylinklabs.watchtower.enable: "false"
+    environment:
+      - TZ=${TZ:-Australia/Sydney}
+      - MARIADB_DATABASE=${UPTIME_KUMA_DB_NAME:-uptime_kuma}
+      - MARIADB_USER=${UPTIME_KUMA_DB_USERNAME:-uptime_kuma}
+      - MARIADB_PASSWORD=${UPTIME_KUMA_DB_PASSWORD:?Set UPTIME_KUMA_DB_PASSWORD in Portainer}
+      - MARIADB_ROOT_PASSWORD=${MARIADB_ROOT_PASSWORD:?Set MARIADB_ROOT_PASSWORD in Portainer}
+    volumes:
+      - mariadb-data:/var/lib/mysql
+    restart: unless-stopped
+    logging: *default-logging
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - 'healthcheck.sh --connect --innodb_initialized'
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
   uptime-kuma:
     image: 'louislam/uptime-kuma:${UPTIME_KUMA_VERSION:-2.5.3}'
     container_name: uptime-kuma
@@ -17,9 +46,18 @@ services:
       com.centurylinklabs.watchtower.enable: "true"
     environment:
       - TZ=${TZ:-Australia/Sydney}
-    # Host networking lets Kuma monitor the NAS loopback-only service ports
-    # without hairpinning through Cloudflare and the Synology reverse proxy.
-    network_mode: host
+      - UPTIME_KUMA_DB_TYPE=mariadb
+      - UPTIME_KUMA_DB_HOSTNAME=mariadb
+      - UPTIME_KUMA_DB_PORT=3306
+      - UPTIME_KUMA_DB_NAME=${UPTIME_KUMA_DB_NAME:-uptime_kuma}
+      - UPTIME_KUMA_DB_USERNAME=${UPTIME_KUMA_DB_USERNAME:-uptime_kuma}
+      - UPTIME_KUMA_DB_PASSWORD=${UPTIME_KUMA_DB_PASSWORD:?Set UPTIME_KUMA_DB_PASSWORD in Portainer}
+      - UPTIME_KUMA_DB_POOL_MAX_CONNECTIONS=${UPTIME_KUMA_DB_POOL_MAX_CONNECTIONS:-10}
+    depends_on:
+      mariadb:
+        condition: service_healthy
+    ports:
+      - '127.0.0.1:3001:3001'
     volumes:
       - '${UPTIME_KUMA_DATA_PATH:?Set UPTIME_KUMA_DATA_PATH in .env}:/app/data'
     restart: unless-stopped
@@ -28,7 +66,7 @@ services:
       - no-new-privileges:true
 
   uptime-kuma-backup:
-    image: 'alpine:3.22'
+    image: 'mariadb:${MARIADB_VERSION:-11.8}'
     container_name: uptime-kuma-backup
     labels:
       com.ambitiouscake.managed-by: "portainer-gitops"
@@ -38,26 +76,37 @@ services:
     environment:
       - TZ=${TZ:-Australia/Sydney}
       - BACKUP_RETENTION_DAYS=${BACKUP_RETENTION_DAYS:-30}
+      - UPTIME_KUMA_DB_NAME=${UPTIME_KUMA_DB_NAME:-uptime_kuma}
+      - UPTIME_KUMA_DB_USERNAME=${UPTIME_KUMA_DB_USERNAME:-uptime_kuma}
+      - UPTIME_KUMA_DB_PASSWORD=${UPTIME_KUMA_DB_PASSWORD:?Set UPTIME_KUMA_DB_PASSWORD in Portainer}
+    depends_on:
+      mariadb:
+        condition: service_healthy
     command:
       - /bin/sh
       - -ec
       - |
-        apk add --no-cache sqlite
         backup_dir=/backups/uptime-kuma-backups
         mkdir -p "$${backup_dir}"
         while true; do
           stamp=$$(date -u +%Y-%m-%dT%H-%M-%SZ)
-          target="$${backup_dir}/kuma-$${stamp}.db"
-          sqlite3 /source/kuma.db ".backup '$${target}'"
-          test "$$(sqlite3 "$${target}" 'PRAGMA integrity_check;')" = ok
+          target="$${backup_dir}/kuma-$${stamp}.sql.gz"
+          MARIADB_PWD="$${UPTIME_KUMA_DB_PASSWORD}" mariadb-dump \
+            --host=mariadb \
+            --user="$${UPTIME_KUMA_DB_USERNAME}" \
+            --single-transaction \
+            --quick \
+            --routines \
+            --events \
+            "$${UPTIME_KUMA_DB_NAME}" | gzip -9 > "$${target}"
+          gzip -t "$${target}"
           (cd "$${backup_dir}" && sha256sum "$$(basename "$${target}")" > "$$(basename "$${target}").sha256")
-          find "$${backup_dir}" -type f \( -name 'kuma-*.db' -o -name 'kuma-*.db.sha256' \) -mtime "+$${BACKUP_RETENTION_DAYS}" -delete
+          find "$${backup_dir}" -type f \( -name 'kuma-*.sql.gz' -o -name 'kuma-*.sql.gz.sha256' \) -mtime "+$${BACKUP_RETENTION_DAYS}" -delete
           date -u +%Y-%m-%dT%H:%M:%SZ > "$${backup_dir}/.last-success"
           echo "Verified backup created: $${target}"
           sleep 86400
         done
     volumes:
-      - '${UPTIME_KUMA_DATA_PATH:?Set UPTIME_KUMA_DATA_PATH in .env}:/source:ro'
       - '${UPTIME_KUMA_BACKUP_PATH:?Set UPTIME_KUMA_BACKUP_PATH in .env}:/backups'
     restart: unless-stopped
     logging: *default-logging
@@ -71,3 +120,6 @@ services:
       timeout: 10s
       retries: 2
       start_period: 30s
+
+volumes:
+  mariadb-data:
