@@ -91,15 +91,22 @@ services:
         while true; do
           stamp=$$(date -u +%Y-%m-%dT%H-%M-%SZ)
           target="$${backup_dir}/kuma-$${stamp}.sql.gz"
+          sql_target="$${backup_dir}/.kuma-$${stamp}.sql.tmp"
+          trap 'rm -f "$${sql_target}" "$${target}"' EXIT INT TERM
           MARIADB_PWD="$${UPTIME_KUMA_DB_PASSWORD}" mariadb-dump \
             --host=mariadb \
             --user="$${UPTIME_KUMA_DB_USERNAME}" \
+            --skip-ssl \
             --single-transaction \
             --quick \
             --routines \
             --events \
-            "$${UPTIME_KUMA_DB_NAME}" | gzip -9 > "$${target}"
+            "$${UPTIME_KUMA_DB_NAME}" > "$${sql_target}"
+          test -s "$${sql_target}"
+          gzip -9c "$${sql_target}" > "$${target}"
           gzip -t "$${target}"
+          rm -f "$${sql_target}"
+          trap - EXIT INT TERM
           (cd "$${backup_dir}" && sha256sum "$$(basename "$${target}")" > "$$(basename "$${target}").sha256")
           find "$${backup_dir}" -type f \( -name 'kuma-*.sql.gz' -o -name 'kuma-*.sql.gz.sha256' \) -mtime "+$${BACKUP_RETENTION_DAYS}" -delete
           date -u +%Y-%m-%dT%H:%M:%SZ > "$${backup_dir}/.last-success"
