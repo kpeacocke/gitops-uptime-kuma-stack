@@ -58,6 +58,24 @@ services:
         condition: service_healthy
     ports:
       - '127.0.0.1:3001:3001'
+    # Avoid routing same-host checks out through Cloudflare/NAT hairpin. Requests
+    # still use the public hostnames, so Synology routing, SNI and TLS are tested.
+    extra_hosts:
+      - 'bazarr.ambitiouscake.com:host-gateway'
+      - 'cleanuparr.ambitiouscake.com:host-gateway'
+      - 'lazylibrarian.ambitiouscake.com:host-gateway'
+      - 'lidarr.ambitiouscake.com:host-gateway'
+      - 'mylar.ambitiouscake.com:host-gateway'
+      - 'notifiarr.ambitiouscake.com:host-gateway'
+      - 'plex.ambitiouscake.com:host-gateway'
+      - 'portainer.ambitiouscake.com:host-gateway'
+      - 'prowlarr.ambitiouscake.com:host-gateway'
+      - 'qbittorrent.ambitiouscake.com:host-gateway'
+      - 'radarr.ambitiouscake.com:host-gateway'
+      - 'sabnzbd.ambitiouscake.com:host-gateway'
+      - 'seerr.ambitiouscake.com:host-gateway'
+      - 'sonarr.ambitiouscake.com:host-gateway'
+      - 'tautulli.ambitiouscake.com:host-gateway'
     volumes:
       - '${UPTIME_KUMA_DATA_PATH:?Set UPTIME_KUMA_DATA_PATH in .env}:/app/data'
     restart: unless-stopped
