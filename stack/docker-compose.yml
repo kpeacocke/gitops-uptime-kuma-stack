@@ -8,7 +8,7 @@ x-logging: &default-logging
 
 services:
   uptime-kuma:
-    image: 'louislam/uptime-kuma:2'
+    image: 'louislam/uptime-kuma:${UPTIME_KUMA_VERSION:-2.5.3}'
     container_name: uptime-kuma
     labels:
       com.ambitiouscake.managed-by: "portainer-gitops"
@@ -26,3 +26,73 @@ services:
     logging: *default-logging
     security_opt:
       - no-new-privileges:true
+
+  uptime-kuma-backup:
+    image: 'louislam/uptime-kuma:${UPTIME_KUMA_VERSION:-2.5.3}'
+    container_name: uptime-kuma-backup
+    labels:
+      com.ambitiouscake.managed-by: "portainer-gitops"
+      com.ambitiouscake.environment: "production"
+      com.ambitiouscake.stack: "uptime-kuma"
+      com.centurylinklabs.watchtower.enable: "false"
+    environment:
+      - TZ=${TZ:-Australia/Sydney}
+      - BACKUP_RETENTION_DAYS=${BACKUP_RETENTION_DAYS:-30}
+    command:
+      - node
+      - -e
+      - |
+        const fs = require("node:fs");
+        const crypto = require("node:crypto");
+        const path = require("node:path");
+        const Database = require("better-sqlite3");
+        const retentionMs = Number(process.env.BACKUP_RETENTION_DAYS) * 86400000;
+        const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+        (async () => {
+          while (true) {
+            const stamp = new Date().toISOString().replaceAll(":", "-");
+            const target = "/backups/kuma-" + stamp + ".db";
+            const source = new Database("/source/kuma.db", {
+              readonly: true,
+              fileMustExist: true,
+            });
+            await source.backup(target);
+            source.close();
+            const copy = new Database(target, { readonly: true });
+            if (copy.pragma("integrity_check", { simple: true }) !== "ok") {
+              throw new Error("Integrity check failed for " + target);
+            }
+            copy.close();
+            const digest = crypto.createHash("sha256")
+              .update(fs.readFileSync(target)).digest("hex");
+            fs.writeFileSync(target + ".sha256", digest + "  " + path.basename(target) + "\n");
+            const cutoff = Date.now() - retentionMs;
+            for (const file of fs.readdirSync("/backups")) {
+              if (/^kuma-.*\.db(?:\.sha256)?$/.test(file)) {
+                const fullPath = path.join("/backups", file);
+                if (fs.statSync(fullPath).mtimeMs < cutoff) fs.unlinkSync(fullPath);
+              }
+            }
+            fs.writeFileSync("/backups/.last-success", new Date().toISOString() + "\n");
+            await sleep(86400000);
+          }
+        })().catch((error) => {
+          console.error(error);
+          process.exit(1);
+        });
+    network_mode: none
+    volumes:
+      - '${UPTIME_KUMA_DATA_PATH:?Set UPTIME_KUMA_DATA_PATH in .env}:/source:ro'
+      - '${UPTIME_KUMA_BACKUP_PATH:?Set UPTIME_KUMA_BACKUP_PATH in .env}:/backups'
+    restart: unless-stopped
+    logging: *default-logging
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - 'test -f /backups/.last-success && test $$(find /backups/.last-success -mmin -1800 | wc -l) -eq 1'
+      interval: 1h
+      timeout: 10s
+      retries: 2
+      start_period: 5m

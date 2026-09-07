@@ -8,6 +8,7 @@ failure instead of failing with it.
 
 - Compose path: `stack/docker-compose.yml`
 - Persistent data: `/volume1/dkrcfg/uptime-kuma`
+- Verified SQLite backups: `/volume1/backups/uptime-kuma`
 - Reverse-proxy target: `http://127.0.0.1:3001`
 - Public URL: `https://uptime.ambitiouscake.com`
 
@@ -32,13 +33,15 @@ Keep the destination set to `http://127.0.0.1:3001`. A plain HTTP 200 response
 is not a sufficient validation: the dashboard must also connect without the
 "Cannot connect to the socket server" warning.
 
-Uptime Kuma v2 uses SQLite by default. Include its data directory in the daily
-Synology Hyper Backup task and filesystem snapshots. Do not place `/app/data`
-on NFS.
+Uptime Kuma uses SQLite. The `uptime-kuma-backup` service creates a consistent
+online backup every 24 hours, verifies it with `PRAGMA integrity_check`, writes
+a SHA-256 checksum, and retains 30 days by default. Mirror both the live data
+directory and `/volume1/backups/uptime-kuma` with Synology Hyper Backup and
+filesystem snapshots. Do not place `/app/data` on NFS.
 
 Use encrypted off-NAS retention of at least 30 daily, 12 monthly, and 3 yearly
-versions. Quarterly, stop Uptime Kuma, restore the data directory to a temporary
-location, run `sqlite3 kuma.db 'PRAGMA integrity_check;'`, and confirm it returns
-`ok` before treating the backup as recoverable. Keep SQLite: a separate MariaDB
-instance adds another failure and backup dependency without improving this
-single-node deployment.
+versions. Quarterly, restore one verified backup to a temporary Kuma instance
+and confirm the dashboard and monitor configuration load. Keep SQLite unless
+rebuilding from a clean MariaDB installation: Uptime Kuma does not officially
+support in-place SQLite-to-MariaDB migration, and third-party conversion can
+omit required indexes.
