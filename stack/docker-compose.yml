@@ -28,7 +28,7 @@ services:
       - no-new-privileges:true
 
   uptime-kuma-backup:
-    image: 'louislam/uptime-kuma:${UPTIME_KUMA_VERSION:-2.5.3}'
+    image: 'alpine:3.22'
     container_name: uptime-kuma-backup
     labels:
       com.ambitiouscake.managed-by: "portainer-gitops"
@@ -39,50 +39,23 @@ services:
       - TZ=${TZ:-Australia/Sydney}
       - BACKUP_RETENTION_DAYS=${BACKUP_RETENTION_DAYS:-30}
     command:
-      - node
-      - -e
+      - /bin/sh
+      - -ec
       - |
-        const fs = require("node:fs");
-        const crypto = require("node:crypto");
-        const path = require("node:path");
-        const Database = require("better-sqlite3");
-        const retentionMs = Number(process.env.BACKUP_RETENTION_DAYS) * 86400000;
-        const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-        (async () => {
-          const backupDir = "/backups/uptime-kuma-backups";
-          fs.mkdirSync(backupDir, { recursive: true });
-          while (true) {
-            const stamp = new Date().toISOString().replaceAll(":", "-");
-            const target = backupDir + "/kuma-" + stamp + ".db";
-            const source = new Database("/source/kuma.db", {
-              readonly: true,
-              fileMustExist: true,
-            });
-            await source.backup(target);
-            source.close();
-            const copy = new Database(target, { readonly: true });
-            if (copy.pragma("integrity_check", { simple: true }) !== "ok") {
-              throw new Error("Integrity check failed for " + target);
-            }
-            copy.close();
-            const digest = crypto.createHash("sha256")
-              .update(fs.readFileSync(target)).digest("hex");
-            fs.writeFileSync(target + ".sha256", digest + "  " + path.basename(target) + "\n");
-            const cutoff = Date.now() - retentionMs;
-            for (const file of fs.readdirSync(backupDir)) {
-              if (/^kuma-.*\.db(?:\.sha256)?$/.test(file)) {
-                const fullPath = path.join(backupDir, file);
-                if (fs.statSync(fullPath).mtimeMs < cutoff) fs.unlinkSync(fullPath);
-              }
-            }
-            fs.writeFileSync(backupDir + "/.last-success", new Date().toISOString() + "\n");
-            await sleep(86400000);
-          }
-        })().catch((error) => {
-          console.error(error);
-          process.exit(1);
-        });
-    network_mode: none
+        apk add --no-cache sqlite
+        backup_dir=/backups/uptime-kuma-backups
+        mkdir -p "$${backup_dir}"
+        while true; do
+          stamp=$$(date -u +%Y-%m-%dT%H-%M-%SZ)
+          target="$${backup_dir}/kuma-$${stamp}.db"
+          sqlite3 /source/kuma.db ".backup '$${target}'"
+          test "$$(sqlite3 "$${target}" 'PRAGMA integrity_check;')" = ok
+          (cd "$${backup_dir}" && sha256sum "$$(basename "$${target}")" > "$$(basename "$${target}").sha256")
+          find "$${backup_dir}" -type f \( -name 'kuma-*.db' -o -name 'kuma-*.db.sha256' \) -mtime "+$${BACKUP_RETENTION_DAYS}" -delete
+          date -u +%Y-%m-%dT%H:%M:%SZ > "$${backup_dir}/.last-success"
+          echo "Verified backup created: $${target}"
+          sleep 86400
+        done
     volumes:
       - '${UPTIME_KUMA_DATA_PATH:?Set UPTIME_KUMA_DATA_PATH in .env}:/source:ro'
       - '${UPTIME_KUMA_BACKUP_PATH:?Set UPTIME_KUMA_BACKUP_PATH in .env}:/backups'
