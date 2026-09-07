@@ -8,7 +8,7 @@ failure instead of failing with it.
 
 - Compose path: `stack/docker-compose.yml`
 - Persistent data: `/volume1/dkrcfg/uptime-kuma`
-- Verified SQLite backups: `/volume1/backups/uptime-kuma`
+- Verified SQLite backups: `/volume1/dkrcfg/uptime-kuma-backups`
 - Reverse-proxy target: `http://127.0.0.1:3001`
 - Public URL: `https://uptime.ambitiouscake.com`
 
@@ -36,7 +36,7 @@ is not a sufficient validation: the dashboard must also connect without the
 Uptime Kuma uses SQLite. The `uptime-kuma-backup` service creates a consistent
 online backup every 24 hours, verifies it with `PRAGMA integrity_check`, writes
 a SHA-256 checksum, and retains 30 days by default. Mirror both the live data
-directory and `/volume1/backups/uptime-kuma` with Synology Hyper Backup and
+directory and `/volume1/dkrcfg/uptime-kuma-backups` with Synology Hyper Backup and
 filesystem snapshots. Do not place `/app/data` on NFS.
 
 Use encrypted off-NAS retention of at least 30 daily, 12 monthly, and 3 yearly
