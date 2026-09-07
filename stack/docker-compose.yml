@@ -67,7 +67,7 @@ services:
       test:
         - CMD-SHELL
         - 'test -f /backups/uptime-kuma-backups/.last-success && test $$(find /backups/uptime-kuma-backups/.last-success -mmin -1800 | wc -l) -eq 1'
-      interval: 1h
+      interval: 1m
       timeout: 10s
       retries: 2
       start_period: 5m
