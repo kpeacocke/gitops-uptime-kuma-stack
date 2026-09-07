@@ -93,7 +93,7 @@ services:
           target="$${backup_dir}/kuma-$${stamp}.sql.gz"
           sql_target="$${backup_dir}/.kuma-$${stamp}.sql.tmp"
           trap 'rm -f "$${sql_target}" "$${target}"' EXIT INT TERM
-          MARIADB_PWD="$${UPTIME_KUMA_DB_PASSWORD}" mariadb-dump \
+          MYSQL_PWD="$${UPTIME_KUMA_DB_PASSWORD}" mariadb-dump \
             --host=mariadb \
             --user="$${UPTIME_KUMA_DB_USERNAME}" \
             --skip-ssl \
